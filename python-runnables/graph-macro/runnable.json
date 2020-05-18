@@ -1,0 +1,144 @@
+{
+    "meta": {
+        "label": "Synchronize AAD users with DSS",
+        "description": "Manage DSS users based on membership of AAD groups",
+        "icon": "icon-user"
+    },
+    "impersonate": true,
+    "requiresGlobalAdmin": true,
+
+    "params": [
+
+        {
+            "name": "sep0",
+            "label": "General settings",
+            "type": "SEPARATOR",
+            "mandatory": false
+        },
+
+        {
+            "name": "flag_simulate",
+            "label": "Simulate",
+            "type": "BOOLEAN",
+            "defaultValue": false,
+            "description": "Do not execute, only log which actions would be taken",
+            "mandatory": false
+        },
+
+        {
+            "name": "groups_dataset",
+            "label": "Groups dataset",
+            "description": "A dataset containing the list of AAD groups. It should contain exactly these columns: dss_name, aad_name, license.",
+            "type": "DATASET"
+        },
+
+        {
+            "name": "log_dataset",
+            "label": "Save logging into",
+            "description": "Optionally save the logging into this dataset. Beware: the whole dataset, including schema, will be overwritten.",
+            "type": "DATASET"
+        },
+
+        {
+            "name": "sep2",
+            "label": "Authentication details",
+            "type": "SEPARATOR"
+        },
+
+        {
+            "name": "auth_method",
+            "type": "SELECT",
+            "label": "Authentication method",
+            "selectChoices": [
+                               { "value": "auth_app_token", "label": "Application Token"},
+                               { "value": "auth_app_cert", "label": "Application Certificate"},
+                               { "value": "auth_user_pwd", "label": "User password"}
+                             ],
+            "defaultValue": "auth_app_token"
+        },
+
+        {
+            "name": "flag_user_credentials",
+            "label": "Use user credentials",
+            "type": "BOOLEAN",
+            "defaultValue": false,
+            "description": "When checked, credentials will be fetched from the user's secrets",
+            "mandatory": false
+        },
+
+        {
+            "name": "graph_tenant_id",
+            "label": "Tenant ID",
+            "type": "STRING",
+            "description": "Application Directory (tenant) ID",
+            "mandatory": false,
+            "visibilityCondition" : "!model.flag_user_credentials"
+        },
+
+        {
+            "name": "graph_app_id",
+            "label": "Application ID",
+            "type": "STRING",
+            "description": "Azure ID of the application which is allowed to read AAD",
+            "mandatory": false,
+            "visibilityCondition" : "!model.flag_user_credentials"
+        },
+
+        {
+            "name": "graph_app_secret",
+            "label": "App secret",
+            "type": "PASSWORD",
+            "description": "Application secret",
+            "mandatory": false,
+            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_app_token'"
+        },
+
+        {
+            "name": "graph_app_cert",
+            "label": "App certificate",
+            "type": "PASSWORD",
+            "description": "Application certificate",
+            "mandatory": false,
+            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_app_cert'"
+        },
+
+        {
+            "name": "graph_app_cert_thumb",
+            "label": "App certificate thumbprint",
+            "type": "PASSWORD",
+            "description": "Certificate thumbprint",
+            "mandatory": false,
+            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_app_cert'"
+        },
+
+        {
+            "name": "graph_user",
+            "label": "User principal",
+            "type": "STRING",
+            "description": "Usually, the user's email",
+            "mandatory": false,
+            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_user_pwd'"
+        },
+
+        {
+            "name": "graph_user_pwd",
+            "label": "User password",
+            "type": "PASSWORD",
+            "description": "",
+            "mandatory": false,
+            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_user_pwd'"
+        }
+    ],
+
+    "permissions": ["ADMIN"],
+
+    "resultType": "RESULT_TABLE",
+
+    "resultLabel": "Macro result: ",
+
+    "extension": "txt",
+
+    "mimeType": "text/plain",
+
+    "macroRoles": []
+}
