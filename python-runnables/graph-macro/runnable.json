@@ -1,14 +1,13 @@
 {
     "meta": {
-        "label": "Synchronize AAD users with DSS",
+        "label": "Synchronize Azure AD users with DSS",
         "description": "Manage DSS users based on membership of AAD groups",
-        "icon": "icon-user"
+        "icon": "icon-windows"
     },
     "impersonate": true,
     "requiresGlobalAdmin": true,
 
     "params": [
-
         {
             "name": "sep0",
             "label": "General settings",
@@ -28,7 +27,7 @@
         {
             "name": "groups_dataset",
             "label": "Groups dataset",
-            "description": "A dataset containing the list of AAD groups. It should contain exactly these columns: dss_name, aad_name, license.",
+            "description": "A dataset containing the list of AAD groups. It should contain exactly these columns: dss_name, aad_name, dss_profile.",
             "type": "DATASET"
         },
 
@@ -44,89 +43,27 @@
             "label": "Authentication details",
             "type": "SEPARATOR"
         },
-
         {
-            "name": "auth_method",
-            "type": "SELECT",
-            "label": "Authentication method",
-            "selectChoices": [
-                               { "value": "auth_app_token", "label": "Application Token"},
-                               { "value": "auth_app_cert", "label": "Application Certificate"},
-                               { "value": "auth_user_pwd", "label": "User password"}
-                             ],
-            "defaultValue": "auth_app_token"
-        },
-
-        {
-            "name": "flag_user_credentials",
-            "label": "Use user credentials",
+            "name": "flag_oauth_credentials",
+            "label": "Use OAuth",
             "type": "BOOLEAN",
             "defaultValue": false,
-            "description": "When checked, credentials will be fetched from the user's secrets",
+            "description": "",
             "mandatory": false
         },
-
         {
-            "name": "graph_tenant_id",
-            "label": "Tenant ID",
-            "type": "STRING",
-            "description": "Application Directory (tenant) ID",
-            "mandatory": false,
-            "visibilityCondition" : "!model.flag_user_credentials"
+            "name": "azure_ad_connection",
+            "label": "Azure Active Directory connection",
+            "type": "PRESET",
+            "parameterSetId": "identification",
+            "visibilityCondition": "!model.flag_oauth_credentials"
         },
-
         {
-            "name": "graph_app_id",
-            "label": "Application ID",
-            "type": "STRING",
-            "description": "Azure ID of the application which is allowed to read AAD",
-            "mandatory": false,
-            "visibilityCondition" : "!model.flag_user_credentials"
-        },
-
-        {
-            "name": "graph_app_secret",
-            "label": "App secret",
-            "type": "PASSWORD",
-            "description": "Application secret",
-            "mandatory": false,
-            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_app_token'"
-        },
-
-        {
-            "name": "graph_app_cert",
-            "label": "App certificate",
-            "type": "PASSWORD",
-            "description": "Application certificate",
-            "mandatory": false,
-            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_app_cert'"
-        },
-
-        {
-            "name": "graph_app_cert_thumb",
-            "label": "App certificate thumbprint",
-            "type": "PASSWORD",
-            "description": "Certificate thumbprint",
-            "mandatory": false,
-            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_app_cert'"
-        },
-
-        {
-            "name": "graph_user",
-            "label": "User principal",
-            "type": "STRING",
-            "description": "Usually, the user's email",
-            "mandatory": false,
-            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_user_pwd'"
-        },
-
-        {
-            "name": "graph_user_pwd",
-            "label": "User password",
-            "type": "PASSWORD",
-            "description": "",
-            "mandatory": false,
-            "visibilityCondition" : "!model.flag_user_credentials && model.auth_method == 'auth_user_pwd'"
+            "name": "azure_ad_connection",
+            "label": "Azure Active Directory connection",
+            "type": "PRESET",
+            "parameterSetId": "oauth",
+            "visibilityCondition": "model.flag_oauth_credentials"
         }
     ],
 

@@ -1,0 +1,26 @@
+{
+    "meta" : {
+        "label": "AAD OAuth settings",
+        "description": "",
+        "icon": "icon-puzzle-piece"
+    },
+    "defaultDefinableInline": true,
+    "defaultDefinableAtProjectLevel": true,
+    "pluginParams": [
+    ],
+    "params": [
+        {
+            "name": "azure_ad_credentials",
+            "label": "something here",
+            "type": "CREDENTIAL_REQUEST",
+            "credentialRequestSettings" : {
+             "type": "OAUTH2",
+             "oauth2Flow" : "authorization_code",
+             "oauth2Provider": "AZURE",
+             "authorizationEndpoint": "https://login.microsoftonline.com/dkudemos.onmicrosoft.com/oauth2/v2.0/authorize",
+             "tokenEndpoint": "https://login.microsoftonline.com/dkudemos.onmicrosoft.com/oauth2/v2.0/token",
+             "scope": "offline_access https://graph.microsoft.com/User.Read.All https://graph.microsoft.com/Group.Read.All" // This is generally a list of Strings or a String with multiple scopes separated by whitespace, which is easier for the user?
+            }
+        }
+    ]
+}
