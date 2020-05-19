@@ -77,6 +77,9 @@ class MyRunnable(Runnable):
         else:
             self.credentials = self.get_credentials("parameters")
 
+        # Connect to Graph API
+        self.set_session_headers()
+
     def get_progress_target(self):
         """
         This defines the progress target, the highest value that progress_callback can return.
@@ -427,6 +430,165 @@ class MyRunnable(Runnable):
                 'Group "{}" has been created.'.format(missing_group)
             )
 
+    def validate_groups(self):
+        ############################
+        # PHASE 1 - Validate DSS groups
+
+        # Read the group configuration data from DSS
+        self.validate_groups_df()
+
+        dss_groups = [group["name"] for group in self.client.list_groups()]
+
+        # Compare DSS groups with the groups in the input
+        groups_from_input = list(self.groups_df["dss_group_name"])
+        local_groups = self.list_diff(dss_groups, groups_from_input)
+        missing_groups = self.list_diff(groups_from_input, dss_groups)
+
+        if missing_groups:
+            self.create_missing_groups(missing_groups)
+            local_groups.extend(missing_groups)
+        return local_groups
+
+    def get_group_members(self):
+        ############################
+        # PHASE 2 - Query Graph
+
+        # Init empty data frame
+        group_members_df = pd.DataFrame()
+
+        # Loop over each group and query the API
+        for row in self.groups_df.itertuples():
+            group_id = self.query_group(row.aad_group_name)
+            if not group_id:
+                continue
+            group_members = self.query_members(group_id, row.dss_group_name)
+            group_members_df = group_members_df.append(
+                group_members, ignore_index=True
+            )
+        return group_members_df
+
+    def get_aad_users(self, group_members_df):
+        ############################
+        # PHASE 3 - Group data frame
+
+        #  dss_profile_lookup = self.groups_df.iloc[:, [0, 2]] double check that change
+        dss_profile_lookup = self.groups_df
+
+        # Sort and group the data frame
+        aad_users = (
+            group_members_df.sort_values(by=["login", "groups"])
+            .merge(dss_profile_lookup, left_on="groups", right_on="dss_group_name")
+            .groupby(by=["login", "displayName", "email"])["groups", "dss_profile"]
+            .agg(["unique"])
+            .reset_index()
+        )
+
+        aad_users.columns = aad_users.columns.droplevel(1)
+        return aad_users
+
+    def get_dss_users(self):
+        # Read data about groups and users from DSS
+        list_users = self.client.list_users()
+        dss_users = pd.DataFrame(
+            list_users,
+            columns=[
+                "login",
+                "displayName",
+                "email",
+                "groups",
+                "sourceType",
+                "userProfile",
+            ],
+        )
+        return dss_users
+
+    def compare_users(self, aad_users, dss_users):
+        # Create a comparison table between AAD and DSS
+        user_comparison = aad_users.merge(
+            dss_users,
+            how="outer",
+            on=["login", "displayName", "email"],
+            suffixes=("_aad", "_dss"),
+            indicator=True,
+        )
+        # Replace NaN with empty lists in the dss_profile column
+        for row in user_comparison.loc[
+            user_comparison.dss_profile.isnull(), "dss_profile"
+        ].index:
+            user_comparison.at[row, "dss_profile"] = []
+        return user_comparison
+
+    @staticmethod
+    def is_only_in_aad(user):
+        # The _merge column was created by the indicator parameter of pd.merge.
+        # It holds data about which sources contain this row.
+        return user["_merge"] == "left_only"
+
+    @staticmethod
+    def is_only_in_dss(user):
+        # The _merge column was created by the indicator parameter of pd.merge.
+        # It holds data about which sources contain this row.
+        return user["_merge"] == "right_only"
+
+    @staticmethod
+    def is_no_auth_user(user):
+        return user["sourceType"] == "LOCAL_NO_AUTH"
+
+    def update_group_memberships(self, user, local_groups):
+        user_id = user["login"]
+        user_dss_profile = self.get_dss_profile(user["dss_profile"])
+        # Compare group memberships in DSS & AAD. If any discrepancies are found: update.
+        users_local_groups = list(set(user["groups_dss"]) & set(local_groups))
+        all_groups = list(user["groups_aad"])
+        all_groups.extend(users_local_groups)
+
+        if (
+            self.list_diff(all_groups, user["groups_dss"])
+            or user_dss_profile != user["userProfile"]
+        ):
+            self.user_update(
+                user_id=user_id, groups=all_groups, user_dss_profile=user_dss_profile
+            )
+
+    def sync_user(self, user, local_groups):
+        user_id = user["login"]
+        user_dss_profile = self.get_dss_profile(user["dss_profile"])
+
+        # If user only exists in AAD, create the user.
+        # The user_create function checks whether the user has a dss_profile.
+        if self.is_only_in_aad(user):
+            self.user_create(
+                user_id=user_id,
+                display_name=user["displayName"],
+                email=user["email"],
+                groups=user["groups_aad"],
+                user_dss_profile=user_dss_profile,
+            )
+            return
+
+        if self.is_only_in_dss(user):
+            # The user exists only in DSS as a LOCAL_NO_AUTH account: delete.
+            if self.is_no_auth_user(user):
+                self.user_delete(user_id, "Not found in AAD.")
+            return
+
+        # The user exists in AAD, and in DSS as LOCAL or LDAP type.
+        # This is strange, and it is logged as a warning.
+        if not self.is_no_auth_user(user):
+            self.add_log(
+                "User {} has DSS user type {}, while LOCAL_NO_AUTH was expected".format(user_id, user["sourceType"]),
+                "WARNING",
+            )
+            return
+
+        # The user exists in DSS, but its AAD memberships don't grant a dss_profile: delete.
+        if user_dss_profile == "NONE":
+            self.user_delete(user_id, "No dss_profile.")
+            return
+
+        # Compare group memberships in DSS & AAD. If any discrepancies are found: update.
+        self.update_group_memberships(user, local_groups)
+
     # -------------------------------------------------------------------
     # The main run method
     # -------------------------------------------------------------------
@@ -440,148 +602,22 @@ class MyRunnable(Runnable):
 
         try:
             progress_callback(0)
+            local_groups = self.validate_groups()
 
-            ############################
-            # PHASE 1 - Validate DSS groups
-
-            # Read the group configuration data from DSS
-            self.validate_groups_df()
-
-            # Read data about groups and users from DSS
-            list_users = self.client.list_users()
-            dss_users = pd.DataFrame(
-                list_users,
-                columns=[
-                    "login",
-                    "displayName",
-                    "email",
-                    "groups",
-                    "sourceType",
-                    "userProfile",
-                ],
-            )
-
-            dss_groups = [group["name"] for group in self.client.list_groups()]
-
-            # Compare DSS groups with the groups in the input
-            groups_from_input = list(self.groups_df["dss_group_name"])
-            local_groups = self.list_diff(dss_groups, groups_from_input)
-            missing_groups = self.list_diff(groups_from_input, dss_groups)
-
-            if missing_groups:
-                self.create_missing_groups(missing_groups)
-                local_groups.extend(missing_groups)
             progress_callback(1)
+            group_members = self.get_group_members()
 
-            ############################
-            # PHASE 2 - Query Graph
-
-            # Connect to Graph API
-            self.set_session_headers()
-
-            # Init empty data frame
-            group_members_df = pd.DataFrame()
-
-            # Loop over each group and query the API
-            for row in self.groups_df.itertuples():
-                group_id = self.query_group(row.aad_group_name)
-                if not group_id:
-                    continue
-                group_members = self.query_members(group_id, row.dss_group_name)
-                group_members_df = group_members_df.append(
-                    group_members, ignore_index=True
-                )
             progress_callback(2)
-
-            ############################
-            # PHASE 3 - Group data frame
-
-            #  dss_profile_lookup = self.groups_df.iloc[:, [0, 2]] double check that change
-            dss_profile_lookup = self.groups_df
-
-            # Sort and group the data frame
-            aad_users = (
-                group_members_df.sort_values(by=["login", "groups"])
-                .merge(dss_profile_lookup, left_on="groups", right_on="dss_group_name")
-                .groupby(by=["login", "displayName", "email"])["groups", "dss_profile"]
-                .agg(["unique"])
-                .reset_index()
-            )
-
-            aad_users.columns = aad_users.columns.droplevel(1)
+            aad_users = self.get_aad_users(group_members)
 
             progress_callback(3)
+            dss_users = self.get_dss_users()
+            user_comparison = self.compare_users(aad_users, dss_users)
+            for _, user in user_comparison.iterrows():
+                self.sync_user(user, local_groups)
 
-            ############################
-            # PHASE 4 - Update DSS users
-
-            # Create a comparison table between AAD and DSS
-            user_comparison = aad_users.merge(
-                dss_users,
-                how="outer",
-                on=["login", "displayName", "email"],
-                suffixes=("_aad", "_dss"),
-                indicator=True,
-            )
-
-            # Replace NaN with empty lists in the dss_profile column
-            for row in user_comparison.loc[
-                user_comparison.dss_profile.isnull(), "dss_profile"
-            ].index:
-                user_comparison.at[row, "dss_profile"] = []
-            # Iterate over this table
-            for _, row in user_comparison.iterrows():
-                user_id = row["login"]
-                user_dss_profile = self.get_dss_profile(row["dss_profile"])
-
-                # The _merge column was created by the indicator parameter of pd.merge.
-                # It holds data about which sources contain this row.
-                source = row["_merge"]
-
-                # If user only exists in AAD, create the user.
-                # The user_create function checks whether the user has a dss_profile.
-                if source == "left_only":
-                    self.user_create(
-                        user_id=user_id,
-                        display_name=row["displayName"],
-                        email=row["email"],
-                        groups=row["groups_aad"],
-                        user_dss_profile=user_dss_profile,
-                    )
-                    continue
-                # The user exists in DSS; store the DSS user type as a variable.
-                dss_user_type = row["sourceType"]
-
-                if source == "right_only":
-                    # The user exists only in DSS as a LOCAL_NO_AUTH account: delete.
-                    if dss_user_type == "LOCAL_NO_AUTH":
-                        self.user_delete(user_id, "Not found in AAD.")
-                    continue
-                # The user exists in AAD, and in DSS as LOCAL or LDAP type.
-                # This is strange, and it is logged as a warning.
-                if dss_user_type != "LOCAL_NO_AUTH":
-                    self.add_log(
-                        "User {} has DSS user type {}, while LOCAL_NO_AUTH was expected".format(user_id, dss_user_type),
-                        "WARNING",
-                    )
-                    continue
-                # The user exists in DSS, but its AAD memberships don't grant a dss_profile: delete.
-                if user_dss_profile == "NONE":
-                    self.user_delete(user_id, "No dss_profile.")
-                    continue
-                # Compare group memberships in DSS & AAD. If any discrepancies are found: update.
-                users_local_groups = list(set(row["groups_dss"]) & set(local_groups))
-                all_groups = list(row["groups_aad"])
-                all_groups.extend(users_local_groups)
-
-                if (
-                    self.list_diff(all_groups, row["groups_dss"])
-                    or user_dss_profile != row["userProfile"]
-                ):
-                    self.user_update(
-                        user_id=user_id, groups=all_groups, user_dss_profile=user_dss_profile
-                    )
             progress_callback(4)  # Phase 4 completed - macro has finished
+
         except Exception as e:
             self.add_log(str(e), "ERROR")
         finally:
