@@ -22,8 +22,8 @@ class MyRunnable(Runnable):
     )
     graph_members_url = "https://graph.microsoft.com/v1.0/groups/{}/members?$select=displayName,userPrincipalName"
 
-    # License types. These should be ordered from most to least potent.
-    possible_licenses = ["DATA_SCIENTIST", "DATA_ANALYST", "READER", "EXPLORER", "NONE"]
+    # dss_profile types. These should be ordered from most to least potent.
+    possible_dss_profiles = ["DATA_SCIENTIST", "DATA_ANALYST", "READER", "EXPLORER", "NONE"]
 
     # Define a translation dict that specifies how each credential should
     # be named in the user's secrets
@@ -49,6 +49,7 @@ class MyRunnable(Runnable):
         # Assign input to self
         self.project_key = project_key
         self.config = config
+        self.config.update(config.get("azure_ad_connection"))
         self.plugin_config = plugin_config
         self.flag_simulate = config["flag_simulate"]
 
@@ -101,18 +102,18 @@ class MyRunnable(Runnable):
         """Return elements of list1 that are not present in list2."""
         return list(set(list1) - set(list2))
 
-    def get_license(self, license_list):
+    def get_dss_profile(self, dss_profile_list):
         """
-        Given an list of license types, return the most potent license.
+        Given an list of dss_profile types, return the most potent dss_profile.
 
-        :param license_list: a list with licenses
+        :param dss_profile_list: a list with dss_profiles
         """
-        # For each license type, going from most to least potent, see if it is present in the list.
-        # If so, return it as the assigned license type.
-        for license_type in self.possible_licenses:
-            if license_type in license_list:
-                return license_type
-        # If no match was found above, default to no license
+        # For each dss_profile type, going from most to least potent, see if it is present in the list.
+        # If so, return it as the assigned dss_profile type.
+        for dss_profile_type in self.possible_dss_profiles:
+            if dss_profile_type in dss_profile_list:
+                return dss_profile_type
+        # If no match was found above, default to no dss_profile
         return "NONE"
 
     # -------------------------------------------------------------------
@@ -136,25 +137,28 @@ class MyRunnable(Runnable):
         return required_credentials
 
     def validate_groups_df(self):
-        """Verifies that the groups data contains the correct columns and license types."""
-        mandatory_columns = ["dss_name", "aad_name", "license"]
+        """Verifies that the groups data contains the correct columns and dss_profile types."""
 
         # Validate existence of correct columns
         column_names = list(self.groups_df.columns)
-        if not column_names == mandatory_columns:
+        self.assert_mandatory_columns(column_names)
+
+        # Validate content of dss_profile column
+        dss_profile_values = list(self.groups_df["dss_profile"].unique())
+        impossible_dss_profiles = self.list_diff(dss_profile_values, self.possible_dss_profiles)
+        if impossible_dss_profiles:
             raise Exception(
-                "The groups dataset is not correctly configured."
-                + " It should contain these columns: "
-                + str(mandatory_columns)
+                "Invalid dss_profile types were found in the groups configuration: {}. Valid dss_profile values are: {}" .format(
+                    impossible_dss_profiles,
+                    self.possible_dss_profiles
+                )
             )
-        # Validate content of license column
-        license_values = list(self.groups_df["license"].unique())
-        impossible_licenses = self.list_diff(license_values, self.possible_licenses)
-        if impossible_licenses:
-            raise Exception(
-                f"Invalid license types were found in the groups configuration: {impossible_licenses}"
-                f". Valid license values are: {self.possible_licenses}"
-            )
+
+    def assert_mandatory_columns(self, column_names):
+        mandatory_columns = ["dss_group_name", "aad_group_name", "dss_profile"]
+        for mandatory_column in mandatory_columns:
+            if mandatory_column not in column_names:
+                raise Exception("The groups dataset is not correctly configured. {} is missing".format(mandatory_column))
 
     def get_credentials(self, source):
         """
@@ -186,7 +190,7 @@ class MyRunnable(Runnable):
             except (KeyError, IndexError):
                 missing_credentials.append(label)
         if missing_credentials:
-            raise KeyError(f"Please specify these credentials: {missing_credentials}")
+            raise KeyError("Please specify these credentials: {}".format(missing_credentials))
         return credentials
 
     # -------------------------------------------------------------------
@@ -269,9 +273,9 @@ class MyRunnable(Runnable):
                 self.credentials["graph_app_id"],
             )
         else:
-            raise Exception(f"Invalid authentication method")
+            raise Exception("Invalid authentication method")
         self.session.headers.update(
-            {"Authorization": f'Bearer {token_response["accessToken"]}'}
+            {"Authorization": 'Bearer {}'.format(token_response["accessToken"])}
         )
 
     def query_group(self, group_name_aad):
@@ -281,22 +285,19 @@ class MyRunnable(Runnable):
         :param group_name_aad: AAD group name
         :return: the Graph ID for the AAD group
         """
-        print("ALX:group_name_aad={}".format(group_name_aad))#dss-user
         try:
             query_url = self.graph_group_url.format(group_name_aad)
-            print("ALX:query_url={}".format(query_url))
             query_result = self.session.get(query_url)
-            print("ALX:query_result={}".format(query_result.text))
             query_result = query_result.json()["value"]
             if query_result:
                 return query_result[0]["id"]
             else:
                 self.add_log(
-                    f"No return value from Graph for group {group_name_aad}", "WARNING",
+                    "No return value from Graph for group {}".format(group_name_aad), "WARNING",
                 )
         except Exception as e:
             self.add_log(
-                f'Error calling Graph API for group "{group_name_aad}: {str(e)}',
+                'Error calling Graph API for group "{}: {}'.format(group_name_aad, str(e)),
                 "WARNING",
             )
 
@@ -308,17 +309,14 @@ class MyRunnable(Runnable):
         :param group_name_dss: DSS group name, returned in result
         :return: a dataframe with 4 columns: display name, email, groups, login
         """
-        print('ALX:group_id, group_name_dss={},{}'.format(group_id, group_name_dss))
         group_members = pd.DataFrame()
 
         try:
             query_url = self.graph_members_url.format(group_id)
-            print('ALX:query_url={}'.format(query_url))
 
             while query_url:
                 query_result = self.session.get(query_url)
                 query_result = query_result.json()
-                print("ALX:query_result={}".format(query_result))
                 query_url = query_result.get("@odata.nextLink", "")
                 group_members = group_members.append(
                     pd.DataFrame(query_result["value"]), ignore_index=True
@@ -336,7 +334,7 @@ class MyRunnable(Runnable):
             return group_members
         except Exception as e:
             self.add_log(
-                f'Group "{group_name_dss}" members cannot be retrieved from AAD: {str(e)}',
+                'Group "{}" members cannot be retrieved from AAD: {}'.format(group_name_dss, str(e)),
                 "WARNING",
             )
 
@@ -344,20 +342,20 @@ class MyRunnable(Runnable):
     # Methods that handle user creation, drop, and alteration within DSS
     # -------------------------------------------------------------------
 
-    def user_create(self, user_id, display_name, email, groups, user_license):
+    def user_create(self, user_id, display_name, email, groups, user_dss_profile):
         """
         Create a new DSS user.
 
         The parameters are taken from the parameters of dataiku.client.create_user.
         """
-        if user_license == "NONE":
+        if user_dss_profile == "NONE":
             self.add_log(
-                f'User "{user_id}" will not be created, since he has no license.'
+                'User "{}" will not be created, since he has no dss_profile.'.format(user_id)
             )
             return
         if self.flag_simulate:
             self.add_log(
-                f'User "{user_id}" will be created and assigned groups "{groups}"'
+                'User "{}" will be created and assigned groups "{}"'.format(user_id, groups)
             )
             return
         # Create the user in DSS
@@ -367,7 +365,7 @@ class MyRunnable(Runnable):
             groups=list(groups),
             password="",
             source_type="LOCAL_NO_AUTH",
-            profile=user_license,
+            profile=user_dss_profile,
         )
 
         # Request and alter the user definition to set the e-mail address
@@ -376,46 +374,58 @@ class MyRunnable(Runnable):
         user.set_definition(user_def)
 
         self.add_log(
-            f'User "{user_id}" has been created and assigned groups "{groups}"'
+            'User "{}" has been created and assigned groups "{}"'.format(user_id, groups)
         )
 
-    def user_update(self, user_id, groups, user_license):
+    def user_update(self, user_id, groups, user_dss_profile):
         """
         Update the group membership of a DSS user.
 
         :param user_id: the account name in DSS
         :param groups: a list of group memberships
-        :param user_license: the license for this user
+        :param user_dss_profile: the dss_profile for this user
         """
         if self.flag_simulate:
             self.add_log(
-                f'User "{user_id}" groups will be modified to "{groups}", user license "{user_license}"'
+                'User "{}" groups will be modified to "{}", user dss_profile "{}"'.format(user_id, groups, user_dss_profile)
             )
             return
         # Request and alter the user's definition
         user = self.client.get_user(user_id)
         user_def = user.get_definition()
         user_def["groups"] = groups
-        user_def["userProfile"] = user_license
+        user_def["userProfile"] = user_dss_profile
         user.set_definition(user_def)
 
         self.add_log(
-            f'User "{user_id}" groups have been modified to "{groups}", user license "{user_license}"'
+            'User "{}" groups have been modified to "{}", user dss_profile "{}"'.format(user_id, groups, user_dss_profile)
         )
 
     def user_delete(self, user_id, reason):
         """
         Remove an user from DSS
         :param user_id: The user's login
-        :param reason: reason for deletion, e.g. "No license" or "Not found in AAD"
+        :param reason: reason for deletion, e.g. "No dss_profile" or "Not found in AAD"
         """
         if self.flag_simulate:
-            self.add_log(f'User "{user_id}" will be deleted. Reason: {reason}')
+            self.add_log('User "{}" will be deleted. Reason: {}'.format(user_id, reason))
             return
         user = self.client.get_user(user_id)
         user.delete()
 
-        self.add_log(f'User "{user_id}" has been deleted. Reason: {reason}')
+        self.add_log('User "{}" has been deleted. Reason: {}'.format(user_id, reason))
+
+    def create_missing_groups(self, missing_groups):
+        if self.flag_simulate:
+            self.add_log(
+                'Groups "{}" will be created.'.format(missing_groups)
+            )
+            return
+        for missing_group in missing_groups:
+            self.client.create_group(missing_group, description="Added by Azure AD Sync", source_type='LOCAL')
+            self.add_log(
+                'Group "{}" has been created.'.format(missing_group)
+            )
 
     # -------------------------------------------------------------------
     # The main run method
@@ -438,8 +448,9 @@ class MyRunnable(Runnable):
             self.validate_groups_df()
 
             # Read data about groups and users from DSS
+            list_users = self.client.list_users()
             dss_users = pd.DataFrame(
-                self.client.list_users(),
+                list_users,
                 columns=[
                     "login",
                     "displayName",
@@ -453,12 +464,13 @@ class MyRunnable(Runnable):
             dss_groups = [group["name"] for group in self.client.list_groups()]
 
             # Compare DSS groups with the groups in the input
-            groups_from_input = list(self.groups_df["dss_name"])
+            groups_from_input = list(self.groups_df["dss_group_name"])
             local_groups = self.list_diff(dss_groups, groups_from_input)
             missing_groups = self.list_diff(groups_from_input, dss_groups)
 
             if missing_groups:
-                raise Exception(f"Groups {missing_groups} are missing from DSS")
+                self.create_missing_groups(missing_groups)
+                local_groups.extend(missing_groups)
             progress_callback(1)
 
             ############################
@@ -471,15 +483,11 @@ class MyRunnable(Runnable):
             group_members_df = pd.DataFrame()
 
             # Loop over each group and query the API
-            print('ALX:before')
             for row in self.groups_df.itertuples():
-                print("ALX:row={}".format(row)) #ALX:row=Pandas(Index=0, dss_name='dss-user', aad_name='dss-user', license='DATA_SCIENTIST')
-                group_id = self.query_group(row.aad_name)
-                print("ALX:group_id={}".format(group_id)) #is None
+                group_id = self.query_group(row.aad_group_name)
                 if not group_id:
                     continue
-                print("ALX:querying")
-                group_members = self.query_members(group_id, row.dss_name)
+                group_members = self.query_members(group_id, row.dss_group_name)
                 group_members_df = group_members_df.append(
                     group_members, ignore_index=True
                 )
@@ -488,13 +496,14 @@ class MyRunnable(Runnable):
             ############################
             # PHASE 3 - Group data frame
 
-            license_lookup = self.groups_df.iloc[:, [0, 2]]
+            #  dss_profile_lookup = self.groups_df.iloc[:, [0, 2]] double check that change
+            dss_profile_lookup = self.groups_df
 
             # Sort and group the data frame
             aad_users = (
                 group_members_df.sort_values(by=["login", "groups"])
-                .merge(license_lookup, left_on="groups", right_on="dss_name")
-                .groupby(by=["login", "displayName", "email"])["groups", "license"]
+                .merge(dss_profile_lookup, left_on="groups", right_on="dss_group_name")
+                .groupby(by=["login", "displayName", "email"])["groups", "dss_profile"]
                 .agg(["unique"])
                 .reset_index()
             )
@@ -515,30 +524,29 @@ class MyRunnable(Runnable):
                 indicator=True,
             )
 
-            # Replace NaN with empty lists in the license column
+            # Replace NaN with empty lists in the dss_profile column
             for row in user_comparison.loc[
-                user_comparison.license.isnull(), "license"
+                user_comparison.dss_profile.isnull(), "dss_profile"
             ].index:
-                user_comparison.at[row, "license"] = []
+                user_comparison.at[row, "dss_profile"] = []
             # Iterate over this table
             for _, row in user_comparison.iterrows():
                 user_id = row["login"]
-                user_license = self.get_license(row["license"])
+                user_dss_profile = self.get_dss_profile(row["dss_profile"])
 
                 # The _merge column was created by the indicator parameter of pd.merge.
                 # It holds data about which sources contain this row.
                 source = row["_merge"]
-                print('ALX:source={}, row={}'.format(source, row))
 
                 # If user only exists in AAD, create the user.
-                # The user_create function checks whether the user has a license.
+                # The user_create function checks whether the user has a dss_profile.
                 if source == "left_only":
                     self.user_create(
                         user_id=user_id,
                         display_name=row["displayName"],
                         email=row["email"],
                         groups=row["groups_aad"],
-                        user_license=user_license,
+                        user_dss_profile=user_dss_profile,
                     )
                     continue
                 # The user exists in DSS; store the DSS user type as a variable.
@@ -553,14 +561,13 @@ class MyRunnable(Runnable):
                 # This is strange, and it is logged as a warning.
                 if dss_user_type != "LOCAL_NO_AUTH":
                     self.add_log(
-                        f"User {user_id} has DSS user type {dss_user_type}, while "
-                        f"LOCAL_NO_AUTH was expected",
+                        "User {} has DSS user type {}, while LOCAL_NO_AUTH was expected".format(user_id, dss_user_type),
                         "WARNING",
                     )
                     continue
-                # The user exists in DSS, but its AAD memberships don't grant a license: delete.
-                if user_license == "NONE":
-                    self.user_delete(user_id, "No license.")
+                # The user exists in DSS, but its AAD memberships don't grant a dss_profile: delete.
+                if user_dss_profile == "NONE":
+                    self.user_delete(user_id, "No dss_profile.")
                     continue
                 # Compare group memberships in DSS & AAD. If any discrepancies are found: update.
                 users_local_groups = list(set(row["groups_dss"]) & set(local_groups))
@@ -569,10 +576,10 @@ class MyRunnable(Runnable):
 
                 if (
                     self.list_diff(all_groups, row["groups_dss"])
-                    or user_license != row["userProfile"]
+                    or user_dss_profile != row["userProfile"]
                 ):
                     self.user_update(
-                        user_id=user_id, groups=all_groups, user_license=user_license
+                        user_id=user_id, groups=all_groups, user_dss_profile=user_dss_profile
                     )
             progress_callback(4)  # Phase 4 completed - macro has finished
         except Exception as e:
