@@ -10,6 +10,7 @@ import requests
 import dataiku
 from dataiku.runnables import Runnable, ResultTable
 
+MANDATORY_COLUMNS = ["dss_group_name", "aad_group_name", "dss_profile"]
 
 class MyRunnable(Runnable):
     """The base interface for a Python runnable"""
@@ -17,9 +18,7 @@ class MyRunnable(Runnable):
     # Relevant URLs
     authority_url = "https://login.microsoftonline.com/"
     graph_url = "https://graph.microsoft.com/"
-    graph_group_url = (
-        "https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '{}'&$select=id"
-    )
+    graph_group_url = "https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '{}'&$select=id"
     graph_members_url = "https://graph.microsoft.com/v1.0/groups/{}/members?$select=displayName,userPrincipalName"
 
     # dss_profile types. These should be ordered from most to least potent.
@@ -158,8 +157,7 @@ class MyRunnable(Runnable):
             )
 
     def assert_mandatory_columns(self, column_names):
-        mandatory_columns = ["dss_group_name", "aad_group_name", "dss_profile"]
-        for mandatory_column in mandatory_columns:
+        for mandatory_column in MANDATORY_COLUMNS:
             if mandatory_column not in column_names:
                 raise Exception("The groups dataset is not correctly configured. {} is missing".format(mandatory_column))
 
@@ -430,10 +428,43 @@ class MyRunnable(Runnable):
                 'Group "{}" has been created.'.format(missing_group)
             )
 
-    def validate_groups(self):
-        ############################
-        # PHASE 1 - Validate DSS groups
+    # -------------------------------------------------------------------
+    # The main run method
+    # -------------------------------------------------------------------
 
+    def run(self, progress_callback):
+        """
+        The main method of Macro runnable.
+
+        :param progress_callback: standard parameter for DSS runnable
+        """
+
+        try:
+            progress_callback(0)
+            local_groups = self.validate_groups()
+
+            progress_callback(1)
+            group_members = self.get_group_members()
+
+            progress_callback(2)
+            aad_users = self.get_aad_users(group_members)
+
+            progress_callback(3)
+            dss_users = self.get_dss_users()
+            user_comparison = self.compare_users(aad_users, dss_users)
+            for _, user in user_comparison.iterrows():
+                self.sync_user(user, local_groups)
+
+            progress_callback(4)  # Phase 4 completed - macro has finished
+
+        except Exception as e:
+            self.add_log(str(e), "ERROR")
+        finally:
+            if self.config.get("log_dataset"):
+                self.save_log(self.config["log_dataset"])
+            return self.create_resulttable()
+
+    def validate_groups(self):
         # Read the group configuration data from DSS
         self.validate_groups_df()
 
@@ -450,9 +481,6 @@ class MyRunnable(Runnable):
         return local_groups
 
     def get_group_members(self):
-        ############################
-        # PHASE 2 - Query Graph
-
         # Init empty data frame
         group_members_df = pd.DataFrame()
 
@@ -468,9 +496,6 @@ class MyRunnable(Runnable):
         return group_members_df
 
     def get_aad_users(self, group_members_df):
-        ############################
-        # PHASE 3 - Group data frame
-
         #  dss_profile_lookup = self.groups_df.iloc[:, [0, 2]] double check that change
         dss_profile_lookup = self.groups_df
 
@@ -518,38 +543,6 @@ class MyRunnable(Runnable):
             user_comparison.at[row, "dss_profile"] = []
         return user_comparison
 
-    @staticmethod
-    def is_only_in_aad(user):
-        # The _merge column was created by the indicator parameter of pd.merge.
-        # It holds data about which sources contain this row.
-        return user["_merge"] == "left_only"
-
-    @staticmethod
-    def is_only_in_dss(user):
-        # The _merge column was created by the indicator parameter of pd.merge.
-        # It holds data about which sources contain this row.
-        return user["_merge"] == "right_only"
-
-    @staticmethod
-    def is_no_auth_user(user):
-        return user["sourceType"] == "LOCAL_NO_AUTH"
-
-    def update_group_memberships(self, user, local_groups):
-        user_id = user["login"]
-        user_dss_profile = self.get_dss_profile(user["dss_profile"])
-        # Compare group memberships in DSS & AAD. If any discrepancies are found: update.
-        users_local_groups = list(set(user["groups_dss"]) & set(local_groups))
-        all_groups = list(user["groups_aad"])
-        all_groups.extend(users_local_groups)
-
-        if (
-            self.list_diff(all_groups, user["groups_dss"])
-            or user_dss_profile != user["userProfile"]
-        ):
-            self.user_update(
-                user_id=user_id, groups=all_groups, user_dss_profile=user_dss_profile
-            )
-
     def sync_user(self, user, local_groups):
         user_id = user["login"]
         user_dss_profile = self.get_dss_profile(user["dss_profile"])
@@ -589,38 +582,34 @@ class MyRunnable(Runnable):
         # Compare group memberships in DSS & AAD. If any discrepancies are found: update.
         self.update_group_memberships(user, local_groups)
 
-    # -------------------------------------------------------------------
-    # The main run method
-    # -------------------------------------------------------------------
+    @staticmethod
+    def is_only_in_aad(user):
+        # The _merge column was created by the indicator parameter of pd.merge.
+        # It holds data about which sources contain this row.
+        return user["_merge"] == "left_only"
 
-    def run(self, progress_callback):
-        """
-        The main method of Macro runnable.
+    @staticmethod
+    def is_only_in_dss(user):
+        # The _merge column was created by the indicator parameter of pd.merge.
+        # It holds data about which sources contain this row.
+        return user["_merge"] == "right_only"
 
-        :param progress_callback: standard parameter for DSS runnable
-        """
+    @staticmethod
+    def is_no_auth_user(user):
+        return user["sourceType"] == "LOCAL_NO_AUTH"
 
-        try:
-            progress_callback(0)
-            local_groups = self.validate_groups()
+    def update_group_memberships(self, user, local_groups):
+        user_id = user["login"]
+        user_dss_profile = self.get_dss_profile(user["dss_profile"])
+        # Compare group memberships in DSS & AAD. If any discrepancies are found: update.
+        users_local_groups = list(set(user["groups_dss"]) & set(local_groups))
+        all_groups = list(user["groups_aad"])
+        all_groups.extend(users_local_groups)
 
-            progress_callback(1)
-            group_members = self.get_group_members()
-
-            progress_callback(2)
-            aad_users = self.get_aad_users(group_members)
-
-            progress_callback(3)
-            dss_users = self.get_dss_users()
-            user_comparison = self.compare_users(aad_users, dss_users)
-            for _, user in user_comparison.iterrows():
-                self.sync_user(user, local_groups)
-
-            progress_callback(4)  # Phase 4 completed - macro has finished
-
-        except Exception as e:
-            self.add_log(str(e), "ERROR")
-        finally:
-            if self.config.get("log_dataset"):
-                self.save_log(self.config["log_dataset"])
-            return self.create_resulttable()
+        if (
+            self.list_diff(all_groups, user["groups_dss"])
+            or user_dss_profile != user["userProfile"]
+        ):
+            self.user_update(
+                user_id=user_id, groups=all_groups, user_dss_profile=user_dss_profile
+            )
