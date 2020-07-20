@@ -27,7 +27,7 @@
         {
             "name": "groups_dataset",
             "label": "Groups dataset",
-            "description": "A dataset containing the list of AAD groups. It should contain exactly these columns: dss_name, aad_name, dss_profile.",
+            "description": "A dataset containing the list of AAD groups. It should contain these columns: dss_group_name, aad_group_name, dss_profile.",
             "type": "DATASET"
         },
 
