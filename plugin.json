@@ -4,7 +4,7 @@
     "meta": {
         "label": "Azure Active Directory Sync",
         "description": "Syncing DSS users with AAD groups",
-        "author": "Viorel Pluta",
+        "author": "Dataiku",
         "icon": "icon-windows",
         "tags": ["Azure", "Cloud", "Governance"],
         "url": "https://www.dataiku.com/product/plugins/azure-ad-sync/",
