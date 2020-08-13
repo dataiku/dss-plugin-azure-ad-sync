@@ -44,6 +44,7 @@ class MyRunnable(Runnable):
             group_members = self.client.get_group_members()
 
             progress_callback(2)
+            self.client.assert_group_not_empty(group_members)
             aad_users = self.client.get_aad_users(group_members)
 
             progress_callback(3)

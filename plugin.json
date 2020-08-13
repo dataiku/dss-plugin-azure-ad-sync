@@ -1,6 +1,6 @@
 {
     "id": "azure-ad-sync",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "meta": {
         "label": "Azure Active Directory Sync",
         "description": "Syncing DSS users with AAD groups",
