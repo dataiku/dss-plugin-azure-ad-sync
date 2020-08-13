@@ -78,7 +78,7 @@ class AzureClient(object):
 
         :param email: the email address
         """
-        return email.replace("@", "_")
+        return email.replace("@", "_").replace("#", "_")
 
     @staticmethod
     def list_diff(list1, list2):
@@ -423,6 +423,10 @@ class AzureClient(object):
             )
         return group_members_df
 
+    def assert_group_not_empty(self, group_members):
+        if group_members.empty:
+            raise Exception("There are no group members to synchronize")
+
     def get_aad_users(self, group_members_df):
         #  dss_profile_lookup = self.groups_df.iloc[:, [0, 2]] double check that change
         dss_profile_lookup = self.groups_df
@@ -453,6 +457,7 @@ class AzureClient(object):
                 "userProfile",
             ],
         )
+        dss_users["email"] = dss_users["email"].astype(object)  # In case of fresh new DSS with one email free admin account
         return dss_users
 
     def compare_users(self, aad_users, dss_users):
