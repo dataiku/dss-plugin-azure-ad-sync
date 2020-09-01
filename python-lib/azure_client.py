@@ -22,9 +22,6 @@ class AzureClient(object):
     graph_group_url = "https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '{}'&$select=id"
     graph_members_url = "https://graph.microsoft.com/v1.0/groups/{}/members?$select=displayName,userPrincipalName"
 
-    # dss_profile types. These should be ordered from most to least potent.
-    possible_dss_profiles = []
-
     # Define a translation dict that specifies how each credential should
     # be named in the user's secrets
     credentials_labels = {
