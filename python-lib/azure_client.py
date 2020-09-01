@@ -23,7 +23,7 @@ class AzureClient(object):
     graph_members_url = "https://graph.microsoft.com/v1.0/groups/{}/members?$select=displayName,userPrincipalName"
 
     # dss_profile types. These should be ordered from most to least potent.
-    possible_dss_profiles = ["DATA_SCIENTIST", "DATA_ANALYST", "READER", "EXPLORER", "NONE"]
+    possible_dss_profiles = []
 
     # Define a translation dict that specifies how each credential should
     # be named in the user's secrets
@@ -52,6 +52,7 @@ class AzureClient(object):
 
         self.client = dataiku.api_client()
         self.run_user = self.client.get_auth_info()["authIdentifier"]
+        self.possible_dss_profiles = self.get_possible_dss_profiles()
         self.session = requests.Session()
 
         # Initialize a dataframe that will contain log data
@@ -98,6 +99,12 @@ class AzureClient(object):
                 return dss_profile_type
         # If no match was found above, default to no dss_profile
         return "NONE"
+
+    def get_possible_dss_profiles(self):
+        licensing = self.client.get_licensing_status()
+        user_profiles = licensing.get('base', []).get('userProfiles', [])
+        user_profiles.append("NONE")
+        return user_profiles
 
     @staticmethod
     def get_required_credentials(auth_method):
