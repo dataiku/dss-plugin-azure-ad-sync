@@ -44,26 +44,10 @@
             "type": "SEPARATOR"
         },
         {
-            "name": "flag_oauth_credentials",
-            "label": "Use OAuth",
-            "type": "BOOLEAN",
-            "defaultValue": false,
-            "description": "",
-            "mandatory": false
-        },
-        {
             "name": "azure_ad_connection",
             "label": "Azure Active Directory connection",
             "type": "PRESET",
-            "parameterSetId": "identification",
-            "visibilityCondition": "!model.flag_oauth_credentials"
-        },
-        {
-            "name": "azure_ad_connection",
-            "label": "Azure Active Directory connection",
-            "type": "PRESET",
-            "parameterSetId": "oauth",
-            "visibilityCondition": "model.flag_oauth_credentials"
+            "parameterSetId": "identification"
         }
     ],
 
