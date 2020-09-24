@@ -69,6 +69,15 @@ class AzureClient(object):
         # Connect to Graph API
         self.set_session_headers()
 
+    def get_possible_dss_profiles(self):
+        self.available_dss_profiles = self.get_available_dss_profiles()
+        ordered_dss_groups = self.groups_df["dss_profile"].tolist()
+        self.ranked_dss_profiles = []
+        for profile in ordered_dss_groups:
+            if profile in self.available_dss_profiles and profile not in self.ranked_dss_profiles:
+                self.ranked_dss_profiles.append(profile)
+        return self.ranked_dss_profiles
+
     @staticmethod
     def get_user_id(email):
         """
@@ -97,7 +106,7 @@ class AzureClient(object):
         # If no match was found above, default to no dss_profile
         return "NONE"
 
-    def get_possible_dss_profiles(self):
+    def get_available_dss_profiles(self):
         licensing = self.client.get_licensing_status()
         user_profiles = licensing.get('base', []).get('userProfiles', [])
         user_profiles.append("NONE")
