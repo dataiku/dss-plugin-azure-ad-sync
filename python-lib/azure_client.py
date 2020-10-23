@@ -348,7 +348,7 @@ class AzureClient(object):
             return
         if self.flag_simulate:
             self.add_log(
-                'User "{}" will be created and assigned groups "{}"'.format(user_id, groups)
+                'User "{}" will be created and assigned groups "{}" with the "{}" profile'.format(user_id, groups, user_dss_profile)
             )
             return
         # Create the user in DSS
@@ -367,7 +367,7 @@ class AzureClient(object):
         user.set_definition(user_def)
 
         self.add_log(
-            'User "{}" has been created and assigned groups "{}"'.format(user_id, groups)
+            'User "{}" has been created and assigned groups "{}" with the "{}" profile'.format(user_id, groups, user_dss_profile)
         )
 
     def user_update(self, user_row, groups, message):
