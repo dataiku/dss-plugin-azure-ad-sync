@@ -71,9 +71,9 @@ class AzureClient(object):
 
     def get_possible_dss_profiles(self):
         self.available_dss_profiles = self.get_available_dss_profiles()
-        ordered_dss_groups = self.groups_df["dss_profile"].tolist()
+        ordered_dss_profiles = self.groups_df["dss_profile"].tolist()
         self.ranked_dss_profiles = []
-        for profile in ordered_dss_groups:
+        for profile in ordered_dss_profiles:
             if profile in self.available_dss_profiles and profile not in self.ranked_dss_profiles:
                 self.ranked_dss_profiles.append(profile)
         return self.ranked_dss_profiles
@@ -317,7 +317,7 @@ class AzureClient(object):
                 )
             if not group_members.empty:
                 # The first column is    meaningless and is removed using iloc
-                group_members = group_members.iloc[:, 1:]
+                group_members = group_members.drop(group_members.columns[0], axis=1)
 
                 # Rename the columns
                 group_members.columns = ["displayName", "email"]
