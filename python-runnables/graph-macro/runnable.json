@@ -34,7 +34,7 @@
         {
             "name": "log_dataset",
             "label": "Save logging into",
-            "description": "Optionally save the logging into this dataset. Beware: the whole dataset, including schema, will be overwritten.",
+            "description": "Optionally save the logging into this dataset",
             "type": "DATASET"
         },
 
