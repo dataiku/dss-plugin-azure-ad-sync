@@ -69,6 +69,15 @@ class AzureClient(object):
         # Connect to Graph API
         self.set_session_headers()
 
+    def get_possible_dss_profiles(self):
+        self.available_dss_profiles = self.get_available_dss_profiles()
+        ordered_dss_profiles = self.groups_df["dss_profile"].tolist()
+        self.ranked_dss_profiles = []
+        for profile in ordered_dss_profiles:
+            if profile in self.available_dss_profiles and profile not in self.ranked_dss_profiles:
+                self.ranked_dss_profiles.append(profile)
+        return self.ranked_dss_profiles
+
     @staticmethod
     def get_user_id(email):
         """
@@ -97,7 +106,7 @@ class AzureClient(object):
         # If no match was found above, default to no dss_profile
         return "NONE"
 
-    def get_possible_dss_profiles(self):
+    def get_available_dss_profiles(self):
         licensing = self.client.get_licensing_status()
         user_profiles = licensing.get('base', []).get('userProfiles', [])
         user_profiles.append("NONE")
@@ -158,6 +167,7 @@ class AzureClient(object):
             secrets_dict = {secret["key"]: secret["value"] for secret in user_secrets}
         else:
             secrets_dict = self.azure_ad_connection
+        # get token = secrets_dict.get("azure_ad_credentials")
         # For each required credential, check whether it is present
         for key in self.required_credentials:
             label = self.credentials_labels[key]
@@ -203,7 +213,14 @@ class AzureClient(object):
         :param dss_log_dataset_name: The name of a DSS dataset
         """
         log_dataset = dataiku.Dataset(dss_log_dataset_name, self.project_key)
-        log_dataset.write_with_schema(self.log_df)
+        if log_dataset.read_schema(raise_if_empty=False):
+            # dataset is not empty, append new records
+            log_df = log_dataset.get_dataframe()
+            log_df = log_df.append(self.log_df, ignore_index=True, sort=False)
+            log_dataset.write_with_schema(log_df)
+        else:
+            # dataset is empty, write with schema
+            log_dataset.write_with_schema(self.log_df)
 
     def create_resulttable(self):
         """
@@ -261,13 +278,17 @@ class AzureClient(object):
         try:
             query_url = self.graph_group_url.format(group_name_aad)
             query_result = self.session.get(query_url)
-            query_result = query_result.json()["value"]
-            if query_result:
-                return query_result[0]["id"]
-            else:
-                self.add_log(
-                    "No return value from Graph for group {}".format(group_name_aad), "WARNING",
-                )
+            query_result = query_result.json()
+            if "value" in query_result:
+                query_result = query_result["value"]
+                if query_result:
+                    return query_result[0]["id"]
+                else:
+                    self.add_log(
+                        "Group {} has not been found in AAD".format(group_name_aad), "WARNING",
+                    )
+            elif "error" in query_result:
+                raise Exception(query_result["error"].get("message"))
         except Exception as e:
             self.add_log(
                 'Error calling Graph API for group "{}: {}'.format(group_name_aad, str(e)),
@@ -294,15 +315,18 @@ class AzureClient(object):
                 group_members = group_members.append(
                     pd.DataFrame(query_result["value"]), ignore_index=True
                 )
-            # The first column is meaningless and is removed using iloc
-            group_members = group_members.iloc[:, 1:]
+            if not group_members.empty:
+                # The first column is    meaningless and is removed using iloc
+                group_members = group_members.drop(group_members.columns[0], axis=1)
 
-            # Rename the columns
-            group_members.columns = ["displayName", "email"]
+                # Rename the columns
+                group_members.columns = ["displayName", "email"]
 
-            # Add two columns
-            group_members["groups"] = group_name_dss
-            group_members["login"] = group_members["email"].apply(self.get_user_id)
+                # Add two columns
+                group_members["groups"] = group_name_dss
+                group_members["login"] = group_members["email"].apply(self.get_user_id)
+            else:
+                self.add_log("Group '{}' has no members in AAD".format(group_name_dss))
 
             return group_members
         except Exception as e:
@@ -324,7 +348,7 @@ class AzureClient(object):
             return
         if self.flag_simulate:
             self.add_log(
-                'User "{}" will be created and assigned groups "{}"'.format(user_id, groups)
+                'User "{}" will be created and assigned groups "{}" with the "{}" profile'.format(user_id, groups, user_dss_profile)
             )
             return
         # Create the user in DSS
@@ -343,32 +367,32 @@ class AzureClient(object):
         user.set_definition(user_def)
 
         self.add_log(
-            'User "{}" has been created and assigned groups "{}"'.format(user_id, groups)
+            'User "{}" has been created and assigned groups "{}" with the "{}" profile'.format(user_id, groups, user_dss_profile)
         )
 
-    def user_update(self, user_id, groups, user_dss_profile):
+    def user_update(self, user_row, groups, message):
         """
         Update the group membership of a DSS user.
 
-        :param user_id: the account name in DSS
-        :param groups: a list of group memberships
-        :param user_dss_profile: the dss_profile for this user
+        :param user_row: the user row
+        :param message: textual description of the changes
         """
+        user_id = user_row["login"]
         if self.flag_simulate:
-            self.add_log(
-                'User "{}" groups will be modified to "{}", user dss_profile "{}"'.format(user_id, groups, user_dss_profile)
-            )
+            self.add_log('User "{}" will be modified: {}'.format(user_id, message))
             return
+
         # Request and alter the user's definition
         user = self.client.get_user(user_id)
         user_def = user.get_definition()
         user_def["groups"] = groups
-        user_def["userProfile"] = user_dss_profile
+        user_def["userProfile"] = user_row["userProfile"]
+        user_def["displayName"] = user_row["displayName_aad"]
+        user_def["email"] = user_row["email_aad"]
+
         user.set_definition(user_def)
 
-        self.add_log(
-            'User "{}" groups have been modified to "{}", user dss_profile "{}"'.format(user_id, groups, user_dss_profile)
-        )
+        self.add_log('User "{}" has been modified: {}'.format(user_id, message))
 
     def user_delete(self, user_id, reason):
         """
@@ -391,7 +415,7 @@ class AzureClient(object):
             )
             return
         for missing_group in missing_groups:
-            self.client.create_group(missing_group, description="Added by Azure AD Sync", source_type='LOCAL')
+            self.client.create_group(name=missing_group, description="Added by Azure AD Sync", source_type='LOCAL')
             self.add_log(
                 'Group "{}" has been created.'.format(missing_group)
             )
@@ -469,7 +493,7 @@ class AzureClient(object):
         user_comparison = aad_users.merge(
             dss_users,
             how="outer",
-            on=["login", "displayName", "email"],
+            on=["login"],
             suffixes=("_aad", "_dss"),
             indicator=True,
         )
@@ -489,8 +513,8 @@ class AzureClient(object):
         if self.is_only_in_aad(user):
             self.user_create(
                 user_id=user_id,
-                display_name=user["displayName"],
-                email=user["email"],
+                display_name=user["displayName_aad"],
+                email=user["email_aad"],
                 groups=user["groups_aad"],
                 user_dss_profile=user_dss_profile,
             )
@@ -536,17 +560,28 @@ class AzureClient(object):
         return user["sourceType"] == "LOCAL_NO_AUTH"
 
     def update_group_memberships(self, user, local_groups):
-        user_id = user["login"]
         user_dss_profile = self.get_dss_profile(user["dss_profile"])
         # Compare group memberships in DSS & AAD. If any discrepancies are found: update.
         users_local_groups = list(set(user["groups_dss"]) & set(local_groups))
+        users_aad_groups = list(set(user["groups_dss"]) - set(local_groups))
         all_groups = list(user["groups_aad"])
         all_groups.extend(users_local_groups)
 
-        if (
-            self.list_diff(all_groups, user["groups_dss"])
-            or user_dss_profile != user["userProfile"]
-        ):
-            self.user_update(
-                user_id=user_id, groups=all_groups, user_dss_profile=user_dss_profile
-            )
+        log_message = ""
+        # check for new AD groups
+        if self.list_diff(all_groups, user["groups_dss"]):
+            log_message += " groups {}".format(all_groups)
+        # check for revoked membership AD groups
+        if self.list_diff(users_aad_groups, all_groups):
+            log_message += " groups {}".format(all_groups)
+
+        if user_dss_profile != user["userProfile"]:
+            user["userProfile"] = user_dss_profile
+            log_message += " profile {}".format(user_dss_profile)
+        if user["displayName_aad"] != user["displayName_dss"]:
+            log_message += " display name {}".format(user["displayName_aad"])
+        if user["email_aad"] != user["email_dss"]:
+            log_message += " email {}".format(user["email_aad"])
+
+        if log_message:
+            self.user_update(user_row=user, groups=all_groups, message=log_message)
