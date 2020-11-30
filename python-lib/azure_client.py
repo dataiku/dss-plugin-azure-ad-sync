@@ -85,7 +85,7 @@ class AzureClient(object):
 
         :param email: the email address
         """
-        return email.replace("@", "_").replace("#", "_")
+        return email.replace("@", "_").replace("#", "_").replace("-", "_")
 
     @staticmethod
     def list_diff(list1, list2):
