@@ -36,6 +36,7 @@ class AzureClient(object):
 
     def __init__(self, project_key, config):
         self.project_key = project_key
+        self.login_remapping = config.get("login_remapping", [])
         self.azure_ad_connection = config.get("azure_ad_connection", {})
         self.flag_simulate = config.get("flag_simulate")
         self.auth_method = self.azure_ad_connection.get("auth_method")
@@ -78,14 +79,17 @@ class AzureClient(object):
                 self.ranked_dss_profiles.append(profile)
         return self.ranked_dss_profiles
 
-    @staticmethod
-    def get_user_id(email):
+    def get_user_id(self, email):
         """
         Creates a user ID based on an email address.
 
         :param email: the email address
         """
-        return email.replace("@", "_").replace("#", "_")
+        for login_remapping in self.login_remapping:
+            from_char = login_remapping.get("from")
+            if from_char:
+                email = email.replace(from_char, login_remapping.get("to", ""))
+        return email
 
     @staticmethod
     def list_diff(list1, list2):
