@@ -35,6 +35,22 @@
             "type": "DATASET"
         },
         {
+            "name": "sep2",
+            "label": "Authentication details",
+            "type": "SEPARATOR"
+        },
+        {
+            "name": "azure_ad_connection",
+            "label": "Azure Active Directory connection",
+            "type": "PRESET",
+            "parameterSetId": "identification"
+        },
+        {
+            "name": "sep3",
+            "label": "Advanced",
+            "type": "SEPARATOR"
+        },
+        {
             "name": "login_remapping",
             "label": "Login remapping",
             "description": "Replace characters in user logins",
@@ -48,17 +64,6 @@
                     "to": "_"
                 }
             ]
-        },
-        {
-            "name": "sep2",
-            "label": "Authentication details",
-            "type": "SEPARATOR"
-        },
-        {
-            "name": "azure_ad_connection",
-            "label": "Azure Active Directory connection",
-            "type": "PRESET",
-            "parameterSetId": "identification"
         }
     ],
 
