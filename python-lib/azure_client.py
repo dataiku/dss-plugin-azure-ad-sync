@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO,
 class AzureClient(object):
 
     MANDATORY_COLUMNS = ["dss_group_name", "aad_group_name", "dss_profile"]
+    V103_REMAPPING_PRESETS = [{'from': '@', 'to': '_'}, {'from': '#', 'to': '_'}]
 
     # Relevant URLs
     authority_url = "https://login.microsoftonline.com/"
@@ -37,7 +38,7 @@ class AzureClient(object):
 
     def __init__(self, project_key, config):
         self.project_key = project_key
-        self.login_remapping = config.get("login_remapping", [])
+        self.login_remapping = config.get("login_remapping", self.V103_REMAPPING_PRESETS)
         self.assert_valid_login_remapping()
         self.azure_ad_connection = config.get("azure_ad_connection", {})
         self.flag_simulate = config.get("flag_simulate")
