@@ -14,7 +14,6 @@
             "type": "SEPARATOR",
             "mandatory": false
         },
-
         {
             "name": "flag_simulate",
             "label": "Simulate",
@@ -23,21 +22,18 @@
             "description": "Do not execute, only log which actions would be taken",
             "mandatory": false
         },
-
         {
             "name": "groups_dataset",
             "label": "Groups dataset",
             "description": "A dataset containing the list of AAD groups. It should contain these columns: dss_group_name, aad_group_name, dss_profile.",
             "type": "DATASET"
         },
-
         {
             "name": "log_dataset",
             "label": "Save logging into",
             "description": "Optionally save the logging into this dataset",
             "type": "DATASET"
         },
-
         {
             "name": "sep2",
             "label": "Authentication details",
@@ -48,6 +44,26 @@
             "label": "Azure Active Directory connection",
             "type": "PRESET",
             "parameterSetId": "identification"
+        },
+        {
+            "name": "sep3",
+            "label": "Advanced",
+            "type": "SEPARATOR"
+        },
+        {
+            "name": "login_remapping",
+            "label": "Login remapping",
+            "description": "Replace characters in user logins",
+            "type": "KEY_VALUE_LIST",
+            "defaultValue": [
+                {
+                    "from": "@",
+                    "to": "_"
+                },{
+                    "from": "#",
+                    "to": "_"
+                }
+            ]
         }
     ],
 
