@@ -74,10 +74,9 @@ class AzureClient(object):
 
     def assert_valid_login_remapping(self):
         for login_remapping in self.login_remapping:
-            print("ALX:login_remapping={}".format(login_remapping))
             to_value = login_remapping.get("to")
             if to_value and not self.is_valid_login(to_value):
-                raise Exception("'{}' in the login remapping is not a valid character for a DSS user login".format(to_value))
+                raise Exception("'{}' in the login remapping is not a valid character for a DSS user login. Valid characters must match the regex pattern [a-zA-Z0-9@.+_-]".format(to_value))
 
     @staticmethod
     def is_valid_login(strg, search=re.compile(r'[^a-zA-Z0-9@.+_-]').search):
