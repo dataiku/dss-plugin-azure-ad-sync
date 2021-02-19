@@ -53,7 +53,7 @@
         {
             "name": "login_remapping",
             "label": "Login remapping",
-            "description": "Replace characters in user logins",
+            "description": "Replace characters in DSS user logins",
             "type": "KEY_VALUE_LIST",
             "defaultValue": [
                 {
