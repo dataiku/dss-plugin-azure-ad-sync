@@ -333,8 +333,8 @@ class AzureClient(object):
                     pd.DataFrame(query_result["value"]), ignore_index=True
                 )
             if not group_members.empty:
-                # The first column is    meaningless and is removed using iloc
-                group_members = group_members.drop(group_members.columns[0], axis=1)
+                # retrieve columns of interest
+                group_members = group_members[['displayName', 'userPrincipalName']]
 
                 # Rename the columns
                 group_members.columns = ["displayName", "email"]
