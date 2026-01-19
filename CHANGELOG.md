@@ -1,6 +1,6 @@
 # Changelog
 
-## [Version 1.0.6] - Deprecation release - 2026-01-16
+## [Version 1.0.6] - Deprecation release - 2026-01-19
 
 - Adds deprecated flag in meta
 

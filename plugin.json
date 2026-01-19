@@ -6,7 +6,7 @@
         "description": "Syncing DSS users with AAD groups. ⚠️ Starting with DSS version 14 this plugin is considered \"deprecated\", we recommend using the native [Azure AD user synchronization](https://doc.dataiku.com/dss/latest/security/authentication/azure-ad.html)",
         "author": "Dataiku",
         "icon": "icon-windows",
-        "tags": ["Azure", "Cloud", "Governance"],
+        "tags": ["Azure", "Microsoft"],
         "url": "https://www.dataiku.com/product/plugins/azure-ad-sync/",
         "licenseInfo": "Apache Software License",
         "deprecated": true
